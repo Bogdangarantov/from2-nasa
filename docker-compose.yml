@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # Frontend with Nginx and SSL
+  frontend:
+    build: 
+      context: ./vue
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Mount SSL certificates from host
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    environment:
+      - DOMAIN=${DOMAIN:-your-domain.com}
+      - EMAIL=${EMAIL:-your-email@example.com}
+      - VITE_API_URL=${VITE_API_URL:-}
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - nasa-network
+
+  # Backend API (internal only, accessed via Nginx)
+  backend:
+    build: 
+      context: ./node
+      dockerfile: Dockerfile
+    # No external ports - only accessible via Nginx
+    expose:
+      - "3000"
+    environment:
+      - NASA_API_KEY=${NASA_API_KEY}
+      - PORT=3000
+      - NODE_ENV=production
+    volumes:
+      - ./node/.env:/app/.env:ro
+    restart: unless-stopped
+    networks:
+      - nasa-network
+
+  # Certbot for SSL certificate management
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    command: certonly --webroot --webroot-path=/var/www/certbot --email ${EMAIL:-your-email@example.com} --agree-tos --no-eff-email --staging -d ${DOMAIN:-your-domain.com}
+    depends_on:
+      - frontend
+    networks:
+      - nasa-network
+
+networks:
+  nasa-network:
+    driver: bridge
+
+volumes:
+  certbot-www:
+  certbot-conf:
